@@ -15,11 +15,13 @@ import android.graphics.BitmapFactory;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.provider.MediaStore;
 import android.support.v4.media.MediaBrowserCompat;
 import android.support.v4.media.MediaDescriptionCompat;
 import android.support.v4.media.MediaMetadataCompat;
@@ -28,6 +30,7 @@ import android.support.v4.media.session.MediaControllerCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.util.LruCache;
+import android.util.Size;
 import android.view.KeyEvent;
 
 import androidx.annotation.RequiresApi;
@@ -35,6 +38,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.media.MediaBrowserServiceCompat;
 import androidx.media.app.NotificationCompat.MediaStyle;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -53,6 +57,7 @@ public class AudioService extends MediaBrowserServiceCompat {
 	public static final int KEYCODE_BYPASS_PAUSE = KeyEvent.KEYCODE_MEDIA_RECORD;
 	public static final int MAX_COMPACT_ACTIONS = 3;
 
+	private static Context context;
 	private static volatile boolean running;
 	static AudioService instance;
 	private static PendingIntent contentIntent;
@@ -83,7 +88,7 @@ public class AudioService extends MediaBrowserServiceCompat {
 			throw new IllegalStateException("AudioService already running");
 		running = true;
 
-		Context context = activity.getApplicationContext();
+		context = activity.getApplicationContext();
 		Intent intent = new Intent(context, activity.getClass());
 		intent.setAction(action);
 		contentIntent = PendingIntent.getActivity(context, REQUEST_CONTENT_INTENT, intent, PendingIntent.FLAG_UPDATE_CURRENT);
@@ -393,20 +398,9 @@ public class AudioService extends MediaBrowserServiceCompat {
 			builder.putString(MediaMetadataCompat.METADATA_KEY_GENRE, genre);
 		if (duration != null)
 			builder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration);
-		if (artUri != null) {
-			builder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artUri);
-			String artCacheFilePath = null;
-			if (extras != null) {
-				artCacheFilePath = (String)extras.get("artCacheFile");
-			}
-			if (artCacheFilePath != null) {
-				Bitmap bitmap = loadArtBitmapFromFile(artCacheFilePath);
-				if (bitmap != null) {
-					builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap);
-					builder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, bitmap);
-				}
-			}
-		}
+		//if (artUri != null) {
+			//builder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artUri);		
+		//}
 		if (playable != null)
 			builder.putLong("playable_long", playable ? 1 : 0);
 		if (displayTitle != null)
@@ -478,8 +472,20 @@ public class AudioService extends MediaBrowserServiceCompat {
 	}
 
 	void setMetadata(final MediaMetadataCompat mediaMetadata) {
-		this.mediaMetadata = mediaMetadata;
-		mediaSession.setMetadata(mediaMetadata);
+		String artCacheFilePath = (String)mediaMetadata.getString("extra_string_albumId");
+		if (artCacheFilePath != null) {
+			MediaMetadataCompat.Builder builder = new MediaMetadataCompat.Builder(mediaMetadata);
+			Bitmap bitmap = loadArtBitmapFromFile(artCacheFilePath);
+			if (bitmap != null) {
+				builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap);
+				builder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, bitmap);
+				this.mediaMetadata = builder.build();
+				mediaMetadataCache.put(mediaMetadata.getString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID), this.mediaMetadata);
+			} else {
+				this.mediaMetadata = mediaMetadata;
+			}
+		}
+		mediaSession.setMetadata(this.mediaMetadata);
 		updateNotification();
 	}
 
@@ -487,23 +493,31 @@ public class AudioService extends MediaBrowserServiceCompat {
 		Bitmap bitmap = artBitmapCache.get(path);
 		if (bitmap != null) return bitmap;
 		try {
+			InputStream is = context.getContentResolver().openInputStream(Uri.withAppendedPath(Uri.parse("content://media/external/audio/albumart"), path));
 			if (artDownscaleSize != null) {
 				BitmapFactory.Options options = new BitmapFactory.Options();
 				options.inJustDecodeBounds = true;
-				BitmapFactory.decodeFile(path, options);
+				BitmapFactory.decodeStream(is, null, options);
 				int imageHeight = options.outHeight;
 				int imageWidth = options.outWidth;
-				options.inSampleSize = calculateInSampleSize(options, artDownscaleSize.width, artDownscaleSize.height);
+				options.inSampleSize = calculateInSampleSize(options, artDownscaleSize.getWidth(), artDownscaleSize.getHeight());
 				options.inJustDecodeBounds = false;
 
-				bitmap = BitmapFactory.decodeFile(path, options);
+				bitmap = BitmapFactory.decodeStream(is, null, options);
 			} else {
-				bitmap = BitmapFactory.decodeFile(path);
+				bitmap = BitmapFactory.decodeStream(is);
 			}
+			is.close();
+
+			//bitmap = MediaStore.Images.Media.getBitmap(context.getContentResolver(), Uri.withAppendedPath(Uri.parse("content://media/external/audio/albumart"), path));
+			//InputStream is = context.getContentResolver().openInputStream(Uri.withAppendedPath(Uri.parse("content://media/external/audio/albumart"), path));
+			//bitmap = BitmapFactory.decodeStream(is);
+			//is.close();
+			
 			artBitmapCache.put(path, bitmap);
 			return bitmap;
 		} catch (Exception e) {
-			e.printStackTrace();
+			//e.printStackTrace();
 			return null;
 		}
 	}

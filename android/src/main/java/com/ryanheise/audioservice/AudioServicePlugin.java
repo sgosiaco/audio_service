@@ -25,6 +25,8 @@ import android.support.v4.media.session.MediaControllerCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
 
+import android.util.Size;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;

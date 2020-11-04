@@ -1488,34 +1488,7 @@ class AudioServiceBackground {
   /// Sets the currently playing media item and notifies all clients.
   static Future<void> setMediaItem(MediaItem mediaItem) async {
     _mediaItem = mediaItem;
-    if (mediaItem.artUri != null) {
-      // We potentially need to fetch the art.
-      String filePath = _getLocalPath(mediaItem.artUri);
-      if (filePath == null) {
-        final fileInfo = _cacheManager.getFileFromMemory(mediaItem.artUri);
-        filePath = fileInfo?.file?.path;
-        if (filePath == null) {
-          // We haven't fetched the art yet, so show the metadata now, and again
-          // after we load the art.
-          await _backgroundChannel.invokeMethod(
-              'setMediaItem', mediaItem.toJson());
-          // Load the art
-          filePath = await _loadArtwork(mediaItem);
-          // If we failed to download the art, abort.
-          if (filePath == null) return;
-          // If we've already set a new media item, cancel this request.
-          if (mediaItem != _mediaItem) return;
-        }
-      }
-      final extras = Map.of(mediaItem.extras ?? <String, dynamic>{});
-      extras['artCacheFile'] = filePath;
-      final platformMediaItem = mediaItem.copyWith(extras: extras);
-      // Show the media item after the art is loaded.
-      await _backgroundChannel.invokeMethod(
-          'setMediaItem', platformMediaItem.toJson());
-    } else {
-      await _backgroundChannel.invokeMethod('setMediaItem', mediaItem.toJson());
-    }
+    await _backgroundChannel.invokeMethod('setMediaItem', mediaItem.toJson());
   }
 
   static Future<void> _loadAllArtwork(List<MediaItem> queue) async {
